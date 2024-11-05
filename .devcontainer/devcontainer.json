@@ -1,0 +1,35 @@
+{
+    "name": "Bun",
+    "build": {
+        "dockerfile": "Dockerfile",
+        // Update 'VARIANT' to pick a Bun version.
+        "args": {
+            "VARIANT": "latest"
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "dbaeumer.vscode-eslint",
+                "oven.bun-vscode"
+            ]
+        }
+    },
+    "runArgs": [
+        "-p=42951:42951",
+        "-p=42591:42591",
+        "--network=host"
+    ],
+    "mounts": [
+        {
+            "type": "bind",
+            "source": "/home/markrad/.ssh",
+            "target": "/home/bun/.ssh"
+        },
+        {
+            "type": "bind",
+            "source": "/home/markrad/services/plex/music",
+            "target": "/home/bun/music"
+        }
+    ]
+}

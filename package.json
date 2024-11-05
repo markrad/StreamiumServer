@@ -1,0 +1,32 @@
+{
+  "name": "streamiumserver",
+  "version": "1.0.0",
+  "description": "Serves music to old Streamium device",
+  "main": "output/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "Streamium"
+  ],
+  "author": "Mark Radbourne",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@supercharge/promise-pool": "^3.2.0",
+    "@types/lokijs": "^1.5.14",
+    "@types/node": "^22.7.5",
+    "express": "^4.21.1",
+    "express-xml-bodyparser": "^0.3.0",
+    "fast-xml-parser": "^4.5.0",
+    "log4js": "^6.9.1",
+    "lokijs": "^1.5.12",
+    "music-metadata": "^10.5.1",
+    "pug": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/express-xml-bodyparser": "^0.3.5",
+    "typescript": "^5.6.3"
+  }
+}
