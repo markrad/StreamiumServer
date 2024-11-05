@@ -30,6 +30,11 @@
             "type": "bind",
             "source": "/home/markrad/services/plex/music",
             "target": "/home/bun/music"
+        },
+        {
+            "type": "bind",
+            "source": "${localEnv:HOME}/.bashrc",
+            "target": "/home/bun/.bashrc"
         }
     ]
 }

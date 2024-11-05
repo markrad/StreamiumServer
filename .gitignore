@@ -130,7 +130,6 @@ dist
 .pnp.*
 
 # bun stuff
-bun.lockb
 
 # music files
 /music

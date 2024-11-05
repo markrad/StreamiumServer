@@ -5,6 +5,9 @@ RUN apt-get update \
     && apt-get -y install --no-install-recommends \
     git \
     nano \
+    curl \
+    openssl \
+    ca-certificates \
     && apt-get auto-remove -y \
     && apt-get clean -y \
     && chsh -s $(which bash) bun \
