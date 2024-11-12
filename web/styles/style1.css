@@ -2,3 +2,14 @@ h1 {
     color: red;
     font-family: Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif;
 }
+
+.container {
+    display: flex;
+}
+
+.box {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid black;
+    margin: 10px;
+}

@@ -1,0 +1,7 @@
+options:
+  musicRoot: /home/bun/music
+  streamiumId:
+    version: 1.0
+    vendor: MusicMatch
+  serverPort: 42591
+  webPort: 42951

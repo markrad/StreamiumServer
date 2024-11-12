@@ -12,8 +12,9 @@ import http from 'http';
 import path from 'node:path';
 import { IArtistAllTracksEntry } from './database/IArtistAllTracksEntry.js';
 import { IIndexEntry } from './database/IIndexEntry.js';
+import { Config } from '../index.js';
 
-const LISTENER_PORT = 42951;
+// const LISTENER_PORT = 42951;
 
 const logger = log4js.getLogger('MusicServer');
 logger.level = 'debug';
@@ -32,16 +33,38 @@ const ARTISTS_NODE = 1;
 const ALBUMS_NODE = 2;
 const GENRES_NODE = 3;
 
+const TOP_LEVEL_NODES: IIndexEntry[] = [
+    {
+        name: 'Artist',
+        nodeId: ARTISTS_NODE,
+    },
+    {
+        name: 'Album',
+        nodeId: ALBUMS_NODE,
+    },
+    {
+        name: 'Genre',
+        nodeId: GENRES_NODE,
+    },
+];
+
+type MusicServerOptions = {
+    musicIndex: MusicIndex;
+    config: Config
+}
+
 export class MusicServer {
     private _app: Express.Application = Express();
     private _xmlParser = new XMLParser();
     private _musicIndex: MusicIndex;
     private _server: http.Server;
     private _root: string;
+    private _port: number;
 
-    constructor(index: MusicIndex) {
-        this._musicIndex = index;
-        this._root = index.root;
+    constructor(options: MusicServerOptions) {
+        this._musicIndex = options.musicIndex;
+        this._root = this._musicIndex.root;
+        this._port = options.config.webPort;
     }
 
     async start(): Promise<void> {
@@ -66,8 +89,8 @@ export class MusicServer {
         this._app.set('views', `${path.join(dir, 'views')}`);
         this._app.set('view engine', 'pug');
         this._app.use(Express.static(this._root));
-        this._app.use(Express.static(`${path.join(dir, 'scripts')}`));
-        this._app.use(Express.static(`${path.join(dir, 'styles')}`));
+        this._app.use('/scripts', Express.static(`${path.join(dir, 'scripts')}`));
+        this._app.use('/styles', Express.static(`${path.join(dir, 'styles')}`));
 
         this._app.use(Express.raw({ type: (req) => {
             logger.trace(`Static request for ${req.url}`);
@@ -75,7 +98,7 @@ export class MusicServer {
         }}));
 
         this._app.get('/', (_req: Request, res: Response) => {
-            res.render('index');
+            res.render('index', { nodes: TOP_LEVEL_NODES });
         });
 
         this._app.post('//', (req: Request, res: Response, _next: NextFunction) => {
@@ -89,7 +112,7 @@ export class MusicServer {
                 logger.trace(xml);
                 let xmlRes: string;
                 if (!navdata.nodeid) {
-                    xmlRes = this._returnTopLevelNodes();
+                    xmlRes = this._buildInitialResponse();
                     logger.debug('Sending initial response');
                 }
                 else {
@@ -118,7 +141,7 @@ export class MusicServer {
                                 res.status(500).send('Unknown nodeid');
                                 return;
                             }
-                            let url = `${req.protocol}://${req.hostname}:${LISTENER_PORT}/`;
+                            let url = `${req.protocol}://${req.hostname}:${this._port}/`;
                             switch (nodeInfo.type) {
                                 case NodeType.artist:
                                     let albumSet: AlbumSet = this._musicIndex.getAlbumsByArtist(nodeInfo.nodeRow as IArtistEntry, fromIndex, navdata.numelem);
@@ -143,7 +166,7 @@ export class MusicServer {
                                     break;
                                 case NodeType.track:
                                     let track: IMusicEntry = this._musicIndex.getTrack(nodeInfo.nodeId);
-                                    xmlRes = this._buildTrackListResponse([track], fromIndex, 1, `${req.protocol}://${req.hostname}:${LISTENER_PORT}/`);
+                                    xmlRes = this._buildTrackListResponse([track], fromIndex, 1, `${req.protocol}://${req.hostname}:${this._port}/`);
                                     logger.debug(`Sending track: ${track.name}`);
                                     break;
                                 default:
@@ -167,11 +190,17 @@ export class MusicServer {
             let nodeId = parseInt(req.query.nodeid as string, 10);
             switch (nodeId) {
                 case TOP_NODE:
-                    res.json(this._xmlParser.parse(this._returnTopLevelNodes()));
+                    res.json(TOP_LEVEL_NODES);
                     break;
                 case ARTISTS_NODE:
-                    let artists = this._musicIndex.artists.sort((a, b) => a.name.localeCompare(b.name));
-                    res.json(this._xmlParser.parse(this._buildListResponse(artists, 0, artists.length)));
+                    let artists = this._musicIndex.artists.sort((a, b) => a.name.localeCompare(b.name)).map((artist) => {
+                        return {
+                            text: artist.name,
+                            id: artist.nodeId,
+                            children: artist.albums.length > 0
+                        }
+                    });
+                    res.json(artists);
                     break;
                 case ALBUMS_NODE:
                     let albums = this._musicIndex.albums.sort((a, b) => a.name.localeCompare(b.name));
@@ -188,15 +217,42 @@ export class MusicServer {
                         res.status(500).send('Unknown nodeid');
                         return;
                     }
-                    let url = `${req.protocol}://${req.hostname}:${LISTENER_PORT}/`;
+                    let url = `${req.protocol}://${req.hostname}:${this._port}/`;
                     switch (nodeInfo.type) {
                         case NodeType.artist:
-                            let albumSet = this._musicIndex.getAlbumsByArtist(nodeInfo.nodeRow as IArtistEntry, 0, (nodeInfo.nodeRow as IArtistEntry).albums.length + 1);
-                            res.json(this._xmlParser.parse(this._buildListResponse(albumSet.nodes, 0, albumSet.totalCount)));
+                            let albums = this._musicIndex.getAlbumsByArtist(nodeInfo.nodeRow as IArtistEntry, 0, (nodeInfo.nodeRow as IArtistEntry).albums.length + 1).nodes.map((album) => {
+                                return {
+                                    text: album.name,
+                                    id: album.nodeId,
+                                    children: album.tracks.length > 0
+                                }
+                            });
+                            res.json(albums);
                             break;
                         case NodeType.album:
-                            let trackSet = this._musicIndex.getTracksByAlbum(nodeInfo.nodeRow as IAlbumEntry, 0, (nodeInfo.nodeRow as IAlbumEntry).tracks.length);
-                            res.json(this._xmlParser.parse(this._buildTrackListResponse(trackSet.tracks, 0, trackSet.totalCount, url)));
+                            let tracks = this._musicIndex.getTracksByAlbum(nodeInfo.nodeRow as IAlbumEntry, 0, (nodeInfo.nodeRow as IAlbumEntry).tracks.length).tracks.map((track: IMusicEntry) => { 
+                                return { 
+                                    text: track.name,
+                                    id: track.nodeId,
+                                    children: false,
+                                    playable: true
+                                }
+                            });
+                            res.json(tracks);
+                            break;
+                        case NodeType.artistAllTracks:
+                            // let artistAllTracks: IArtistAllTracksEntry = nodeInfo.nodeRow as IArtistAllTracksEntry;
+                            let allTracks = this._musicIndex.getAllTracksByArtist(null, nodeInfo.nodeRow as IArtistAllTracksEntry, 0, (nodeInfo.nodeRow as IArtistAllTracksEntry).tracks.length).tracks.map((track) => {
+                                return {
+                                    text: track.name,
+                                    id: track.nodeId,
+                                    children: false,
+                                    playable: true,
+                                }
+                            });
+                            res.json(allTracks);
+                            // xmlRes = this._buildTrackListResponse(allTracks.tracks, fromIndex, allTracks.totalCount, url);
+                            // logger.debug(`Sending ${allTracks.tracks.length} track${allTracks.tracks.length == 1 ? '' : 's'} from: ${fromIndex}; count: ${navdata.numelem} of: ${allTracks.totalCount}`);
                             break;
                         case NodeType.genre:
                             let genreSet = this._musicIndex.getTracksByGenre(req.ip, nodeInfo.nodeRow as IGenreEntry, 0, (nodeInfo.nodeRow as IGenreEntry).tracks.length, '');
@@ -204,7 +260,7 @@ export class MusicServer {
                             break;
                         case NodeType.track:
                             let track = this._musicIndex.getTrack(nodeId);
-                            res.json(this._xmlParser.parse(this._buildTrackListResponse([track], 0, 1, `${req.protocol}://${req.hostname}:${LISTENER_PORT}/`)));
+                            res.json(this._xmlParser.parse(this._buildTrackListResponse([track], 0, 1, `${req.protocol}://${req.hostname}:${this._port}/`)));
                             break;
                         default:
                             logger.error(`Unknown node type: ${nodeInfo.type}`);
@@ -220,7 +276,7 @@ export class MusicServer {
             if (nodeId === 0) {
                 // res.set('Content-Type', 'application/xml');
                 res.type('xml');    
-                res.send(this._returnTopLevelNodes());
+                res.send(this._buildInitialResponse());
                 // res.json(this._xmlParser.parse(this._returnTopLevelNodes()));
                 return;
             }
@@ -313,7 +369,7 @@ export class MusicServer {
                 let html = `<html><head><title>Tracks in ${album.name}</title></head><body><h1>Tracks in ${album.name}</h1>`;
                 html += '<a href="/albums">Go to Albums</a><table><thead><tr><th>Artist</th><th>Album</th><th>Track</th></tr></thead><tbody>';
                 for (const track of tracks) {
-                    const trackUrl = `${req.protocol}://${req.hostname}:${LISTENER_PORT}/${encodeURIComponent(path.relative(this._root, track.file))}`;
+                    const trackUrl = `${req.protocol}://${req.hostname}:${this._port}/${encodeURIComponent(path.relative(this._root, track.file))}`;
                     html += `<tr><td>${track.artist}</td><td>${track.album}</td><td><a href="${trackUrl}">${track.name}</a></td></tr>`;
                 }
                 html += '</tbody></table></body></html>';
@@ -348,7 +404,7 @@ export class MusicServer {
                 let html = `<html><head><title>Tracks in ${genre.name}</title></head><body><h1>Tracks in ${genre.name}</h1>`;
                 html += '<a href="/genres">Go to Genres</a><table><thead><tr><th>Artist</th><th>Album</th><th>Track</th></tr></thead><tbody>';
                 for (const track of tracks) {
-                    const trackUrl = `${req.protocol}://${req.hostname}:${LISTENER_PORT}/${encodeURIComponent(path.relative(this._root, track.file))}`;
+                    const trackUrl = `${req.protocol}://${req.hostname}:${this._port}/${encodeURIComponent(path.relative(this._root, track.file))}`;
                     html += `<tr><td>${track.artist}</td><td>${track.album}</td><td><a href="${trackUrl}">${track.name}</a></td></tr>`;
                 }
                 html += '</tbody></table></body></html>';
@@ -365,7 +421,7 @@ export class MusicServer {
                 let html = '<html><head><title>Tracks</title></head><body><h1>Tracks</h1>';
                 html += '<a href="/artists">Go to Artists</a> | <a href="/albums">Go to Albums</a> | <a href="/genres">Go to Genres</a><table><thead><tr><th>Artist</th><th>Album</th><th>Track</th></tr></thead><tbody>';
                 for (const track of tracks) {
-                    const trackUrl = `${_req.protocol}://${_req.hostname}:${LISTENER_PORT}/${encodeURIComponent(path.relative(this._root, track.file))}`;
+                    const trackUrl = `${_req.protocol}://${_req.hostname}:${this._port}/${encodeURIComponent(path.relative(this._root, track.file))}`;
                     html += `<tr><td>${track.artist}</td><td>${track.album}</td><td><a href="${trackUrl}">${track.name}</a></td></tr>`;
                 }
                 html += '</tbody></table></body></html>';
@@ -376,9 +432,13 @@ export class MusicServer {
             }
         });
 
-        this._server = this._app.listen(LISTENER_PORT, () => {
-            logger.info(`Listening on port ${LISTENER_PORT}`);
-        });
+        try {
+            this._server = this._app.listen(this._port, () => {
+                logger.info(`Listening on port ${this._port}`);
+            });
+        } catch (error) {
+            logger.error(`Failed to start server: ${error.message}`);
+        }
     }
 
     async stop(): Promise<void> {
@@ -396,33 +456,33 @@ export class MusicServer {
         });
     }
 
-    private _returnTopLevelNodes(): string {
-        let response: IIndexEntry[] = [
-            {
-                name: 'Artist',
-                nodeId: ARTISTS_NODE,
-            },
-            {
-                name: 'Album',
-                nodeId: ALBUMS_NODE,
-            },
-            {
-                name: 'Genre',
-                nodeId: GENRES_NODE,
-            },
-        ];
-        return this._buildInitialResponse(0, response.length, false, response);
-    }
+    // private _returnTopLevelNodes(): string {
+    //     let response: IIndexEntry[] = [
+    //         {
+    //             name: 'Artist',
+    //             nodeId: ARTISTS_NODE,
+    //         },
+    //         {
+    //             name: 'Album',
+    //             nodeId: ALBUMS_NODE,
+    //         },
+    //         {
+    //             name: 'Genre',
+    //             nodeId: GENRES_NODE,
+    //         },
+    //     ];
+    //     return this._buildInitialResponse(0, response.length, false, response);
+    // }
 
 
-    private _buildInitialResponse(fromIndex: number, totalNodes: number, alphanumeric: boolean, nodes: IIndexEntry[]): string {
+    private _buildInitialResponse(): string {
         let body: string = '';
 
-        for (let node of nodes) {
+        for (let node of TOP_LEVEL_NODES) {
             body += `<contentdata><name>${node.name}</name><nodeid>${node.nodeId}</nodeid><branch/></contentdata>`;
         }
 
-        let auxData: string = `<totnumelem>${totalNodes}</totnumelem><fromindex>${fromIndex}</fromindex><numelem>${nodes.length}</numelem>${alphanumeric? '<alphanumeric/>': ''}`;
+        let auxData: string = `<totnumelem>${TOP_LEVEL_NODES.length}</totnumelem><fromindex>0</fromindex><numelem>${TOP_LEVEL_NODES.length}</numelem>}`;
 
         body = `<contentdataset>${body}${auxData}</contentdataset>`;
 

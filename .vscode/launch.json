@@ -28,7 +28,7 @@
             "program": "${workspaceFolder}/index.ts",
             // "outputCapture": "std",
             "args": [
-                "/home/bun/music"
+                "/workspaces/streamiumServer/config.yaml"
             ]
         },
     ]

@@ -15,9 +15,10 @@ import { IGenreEntry } from './database/IGenreEntry.js';
 import { NodeType } from './types/NodeType.js';
 import { IArtistAllTracksEntry } from './database/IArtistAllTracksEntry.js';
 import { IArtistByLetterEntry } from './database/IArtistByLetterEntry.js';
+import { Config } from '../index.js';
 
 type MusicIndexOptions = {
-    musicRoot: string;
+    config: Config;
     databaseFile: string;
 }
 
@@ -71,7 +72,7 @@ logger.level = "debug";
 const FIRST_NODE = 100;
 
 export class MusicIndex {
-    private _root: string;
+    // private _root: string;
     private _dbFile: string;
     private readonly _currentDbVersion: number = 1;
     private _db: Loki;
@@ -84,9 +85,10 @@ export class MusicIndex {
     private _genres: Collection<IGenreEntry>;
     private _nextNode: number;
     private _superScroll: Map<string, SuperScrollInfo> = new Map();
+    private _config: Config
 
     constructor(options: MusicIndexOptions) {
-        this._root = options.musicRoot;
+        this._config = options.config;
         this._dbFile = options.databaseFile;
     }
 
@@ -134,7 +136,7 @@ export class MusicIndex {
         await ew.EventWait();
 
         logger.info('Finding music files');
-        let files = (await this._indexDir(this._root)).sort((l, r) => l.localeCompare(r));
+        let files = (await this._indexDir(this._config.musicRoot)).sort((l, r) => l.localeCompare(r));
         logger.info(`Found ${files.length} file${files.length == 1 ? '' : 's'}`);
         let removedEntries = 0;
         for (let entry of this._musicFiles.find()) {
@@ -167,6 +169,8 @@ export class MusicIndex {
         logger.info(`        ${this.totalArtists.toString().padStart(pad)} artist${this.totalArtists == 1 ? '' : 's'}`);
         logger.info(`        ${this.totalAlbums.toString().padStart(pad) } album${this.totalAlbums == 1 ? '' : 's'}`);
         logger.info(`        ${this.totalGenres.toString().padStart(pad) } genre${this.totalGenres == 1 ? '' : 's'}`);
+
+
     }
 
     public async stop(): Promise<void> {
@@ -175,7 +179,7 @@ export class MusicIndex {
         logger.info('Music index stopped');
     }
 
-    public get root(): string { return this._root; }
+    public get root(): string { return this._config.musicRoot; }
     public get nextNode(): number { return this._nextNode; }
     public get artists(): IArtistEntry[] { return this._artists.chain().find().simplesort('name').data(); }
     public get albums(): IAlbumEntry[] { return this._albums.chain().find().simplesort('name').data(); }
@@ -196,7 +200,7 @@ export class MusicIndex {
         else return null;
     }
 
-    public getArtists(remoteAddress: string, fromIndex: number, count: number, superscroll: string): ArtistSet {
+    public getArtists(remoteAddress: string, fromIndex: number, count: number, superscroll: string = null): ArtistSet {
         let client = this._getClient(remoteAddress);
         if (superscroll) {
             this.clearSuperScroll(remoteAddress);
@@ -208,7 +212,7 @@ export class MusicIndex {
             : { totalCount: this.totalArtists, nodes: this._artists.chain().find().sort((l, r) => l.name.toLowerCase().localeCompare(r.name.toLowerCase())).offset(fromIndex).limit(count).data() };
     }
 
-    public getAlbums(remoteAddress: string, fromIndex: number, count: number, superscroll: string): AlbumSet {
+    public getAlbums(remoteAddress: string, fromIndex: number, count: number, superscroll: string = null): AlbumSet {
         let client = this._getClient(remoteAddress);
         if (superscroll) {
             this.clearSuperScroll(remoteAddress);
@@ -220,7 +224,7 @@ export class MusicIndex {
             : { totalCount: this.totalAlbums, nodes: this._albums.chain().find().sort((l, r) => l.name.toLowerCase().localeCompare(r.name.toLowerCase())).offset(fromIndex).limit(count).data() };
     }
 
-    public getAllTracksByArtist(remoteAddress: string, artist: IArtistAllTracksEntry, fromIndex: number, count: number, superscroll: string): TrackSet {
+    public getAllTracksByArtist(remoteAddress: string, artist: IArtistAllTracksEntry, fromIndex: number, count: number, superscroll: string = null): TrackSet {
         let client = this._getClient(remoteAddress);
         if (superscroll) {
             this.clearSuperScroll(remoteAddress);
@@ -240,7 +244,7 @@ export class MusicIndex {
         // return { totalCount: totalCount, tracks: tracks };
     }
 
-    public getGenres(remoteAddress: string, fromIndex: number, count: number, superscroll: string): GenreSet {
+    public getGenres(remoteAddress: string, fromIndex: number, count: number, superscroll: string = null): GenreSet {
         let client = this._getClient(remoteAddress);
         if (superscroll) {
             this.clearSuperScroll(remoteAddress);
@@ -261,7 +265,7 @@ export class MusicIndex {
         return { totalCount: totalCount, tracks: tracks };
     }
 
-    public getTracksByGenre(remoteAddress: string, genre: IGenreEntry, fromIndex: number, count: number, superscroll: string): TrackSet {
+    public getTracksByGenre(remoteAddress: string, genre: IGenreEntry, fromIndex: number, count: number, superscroll: string = null): TrackSet {
         let client = this._getClient(remoteAddress);
         if (superscroll) {
             this.clearSuperScroll(remoteAddress);
